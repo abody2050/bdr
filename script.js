@@ -215,35 +215,46 @@ function generateMessage() {
     const dayData = dailyRecords[dateKey] || {};
     const today = currentDay;
     const gregorianDate = today.toLocaleDateString('ar-u-nu-arab', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-    const hijriDate = getHijriDate(currentDay);
 
     let message = `السلام عليكم ورحمة الله وبركاته
+
 تقرر نتائج حلقة زيد بن الدثنة لليوم
-التاريخ: ${gregorianDate} — ${hijriDate}
-\n`;
+
+التاريخ: ${gregorianDate}
+
+`;
 
     if (students.length === 0) {
         message += 'لا يوجد طلاب مسجلون في الحلقة.\n';
     } else {
+        const separator = '---------------------------------';
+        
         students.forEach((student, index) => {
             const studentRecord = dayData[student.id] || { حفظ: false, مراجعة: false, غائب: false, مستأذن: false };
             let statusDetails = '';
             
             if (studentRecord['غائب']) {
-                statusDetails = 'غائب';
+                statusDetails = '       غائب';
             } else if (studentRecord['مستأذن']) {
-                statusDetails = 'مستأذن';
+                statusDetails = '       مستأذن';
             } else {
                 const hifdhStatus = studentRecord['حفظ'] ? '✅' : '❌';
                 const murajaaStatus = studentRecord['مراجعة'] ? '✅' : '❌';
                 statusDetails = `حفظ: ${hifdhStatus} — مراجعة: ${murajaaStatus}`;
             }
             
-            message += `${toArabicNumerals(index + 1)}. ${student.name} — ${statusDetails}\n`;
+            message += `${separator}
+${toArabicNumerals(index + 1)}.\`${student.name}\`
+${statusDetails}
+`;
         });
+        
+        message += `${separator}
+
+`;
     }
 
-    message += `\nمركز بدر لتعليم القرآن الكريم – إدارة حلقة زيد بن الدثنة`;
+    message += `مركز بدر لتعليم القرآن الكريم – إدارة حلقة زيد بن الدثنة`;
     
     messagePreviewEl.textContent = message;
     messageModal.style.display = 'block';
