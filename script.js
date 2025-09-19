@@ -209,7 +209,6 @@ function handleStatusChange(event) {
     localStorage.setItem('dailyRecords', JSON.stringify(dailyRecords));
     updateStats();
 }
-
 function generateMessage() {
     const dateKey = currentDay.toISOString().slice(0, 10);
     const dayData = dailyRecords[dateKey] || {};
