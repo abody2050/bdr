@@ -66,15 +66,17 @@ function getHijriDate(date = new Date()) {
 }
 
 // Initial state and data
-let students = JSON.parse(localStorage.getItem('students')) || [
-    { id: 1, name: 'ريان' },
-    { id: 2, name: 'عمرو مصطفى' },
-    { id: 3, name: 'أسامة ' },
-    { id: 4, name: 'عمرو عيسى' }
-];
+let students = JSON.parse(localStorage.getItem('students')) || [];
+
 let dailyRecords = JSON.parse(localStorage.getItem('dailyRecords')) || {};
 let currentDay = new Date();
 const today = new Date();
+
+// Load site-level settings (class name, teacher)
+let siteSettings = JSON.parse(localStorage.getItem('siteSettings')) || {
+    className: 'حلقة زيد بن الدثنة',
+    teacherName: 'أ. خالد البيضي'
+};
 
 // DOM Elements
 const welcomeMessageEl = document.getElementById('welcome-message');
@@ -97,13 +99,35 @@ const attendanceTable = document.getElementById('attendance-table');
 const statsRangeSelect = document.getElementById('stats-range');
 let chartInstance = null;
 
+// Site settings modal elements
+const siteSettingsBtn = document.getElementById('site-settings-btn');
+const siteSettingsModal = document.getElementById('site-settings-modal');
+const closeSiteSettingsBtn = document.querySelector('.close-site-settings-btn');
+const formClassName = document.getElementById('form-class-name');
+const formTeacherName = document.getElementById('form-teacher-name');
+const saveSiteSettingsBtn = document.getElementById('save-site-settings-btn');
+
+// Student suspend modal elements
+const studentSuspendModal = document.getElementById('student-suspend-modal');
+const closeSuspendBtn = document.querySelector('.close-suspend-btn');
+const suspendSaveCheckbox = document.getElementById('suspend-save');
+const suspendReviewCheckbox = document.getElementById('suspend-review');
+const suspendStartInput = document.getElementById('suspend-start');
+const suspendEndInput = document.getElementById('suspend-end');
+const saveSuspendBtn = document.getElementById('save-suspend-btn');
+const removeSuspendBtn = document.getElementById('remove-suspend-btn');
+
+let currentEditingSuspendStudentId = null; // holds student id when editing suspension
+
 // --- Functions ---
 function displayWelcome() {
     const gregorianDate = today.toLocaleDateString('ar-u-nu-arab', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
     const hijriDate = getHijriDate();
     
-    welcomeMessageEl.textContent = 'مرحباً أستاذ خالد البيضي';
+    welcomeMessageEl.textContent = `مرحباً أستاذ ${siteSettings.teacherName}`;
     dateInfoEl.textContent = `التاريخ: ${gregorianDate} — ${hijriDate}`;
+    document.getElementById('center-name').textContent = 'مركز بدر لتعليم القرآن الكريم';
+    document.getElementById('footer-line').textContent = `مركز بدر لتعليم القرآن الكريم – إدارة حلقة  ${siteSettings.className}`;
 }
 
 function renderStudents() {
@@ -118,12 +142,32 @@ function renderStudents() {
             <span>${toArabicNumerals(index + 1)}. ${student.name}</span>
             <div class="student-actions">
                 <button class="edit-btn" data-id="${student.id}" title="تعديل"><i class="fas fa-edit"></i></button>
+                <button class="suspend-btn" data-id="${student.id}" title="إيقاف/استئناف"><i class="fas fa-pause"></i></button>
                 <button class="delete-btn" data-id="${student.id}" title="حذف"><i class="fas fa-trash"></i></button>
             </div>
         `;
         studentListEl.appendChild(li);
     });
     localStorage.setItem('students', JSON.stringify(students));
+}
+
+function isDateLessThan(aDateStr, bDateStr) {
+    // compare 'YYYY-MM-DD' strings safely
+    if (!aDateStr || !bDateStr) return false;
+    return new Date(aDateStr) < new Date(bDateStr);
+}
+
+// دالة مساعدة لتطبيع التاريخ (إلغاء الساعة)
+function normalizeDate(date) {
+    const d = new Date(date);
+    d.setHours(0, 0, 0, 0);
+    return d;
+}
+
+// دالة لتحويل النص yyyy-mm-dd إلى تاريخ مضبوط
+function parseDateInput(dateStr) {
+    const parts = dateStr.split('-'); // [yyyy, mm, dd]
+    return new Date(parts[0], parts[1] - 1, parts[2]); // الشهر يبدأ من 0
 }
 
 function renderDailyTable() {
@@ -153,9 +197,33 @@ function renderDailyTable() {
         return;
     }
     
+    const renderDateKey = dateKey;
+    const todayKey = today.toISOString().slice(0,10);
+
     students.forEach((student, index) => {
         const studentRecord = dayData[student.id] || { حفظ: false, مراجعة: false, غائب: false, مستأذن: false };
         const tr = document.createElement('tr');
+
+        // تحقق من حالة الإيقاف
+        let isSuspended = false;
+        let suspendStops = { save: false, review: false };
+        if (student.suspension && student.suspension.start_date) {
+            const sStart = student.suspension.start_date;
+            const sEnd = student.suspension.end_date || null;
+            const startDateObj = normalizeDate(parseDateInput(sStart));
+            const endDateObj = sEnd ? normalizeDate(parseDateInput(sEnd)) : null;
+            const renderDateObj = normalizeDate(parseDateInput(renderDateKey));
+
+            if (renderDateObj >= startDateObj && (!endDateObj || renderDateObj <= endDateObj)) {
+                isSuspended = true;
+                suspendStops.save = !!student.suspension.stopSave;
+                suspendStops.review = !!student.suspension.stopReview;
+            }
+        }
+
+        // Past days must remain unchanged (الأيام الماضية تظل محفوظة)
+        const isPast = normalizeDate(parseDateInput(renderDateKey)) < normalizeDate(parseDateInput(todayKey));
+
         tr.innerHTML = `
             <td>${toArabicNumerals(index + 1)}</td>
             <td>${student.name}</td>
@@ -165,14 +233,35 @@ function renderDailyTable() {
             <td><input type="checkbox" class="status-checkbox" data-student-id="${student.id}" data-status="مستأذن" ${studentRecord['مستأذن'] ? 'checked' : ''}></td>
         `;
         
-        // تمييز اليوم الحالي بخلفية مميزة
         if (isToday) {
             tr.classList.add('today-row');
         }
-        
+
         attendanceBodyEl.appendChild(tr);
+
+        const saveCb = tr.querySelector(`input[data-student-id="${student.id}"][data-status="حفظ"]`);
+        const reviewCb = tr.querySelector(`input[data-student-id="${student.id}"][data-status="مراجعة"]`);
+        const absentCb = tr.querySelector(`input[data-student-id="${student.id}"][data-status="غائب"]`);
+        const excusedCb = tr.querySelector(`input[data-student-id="${student.id}"][data-status="مستأذن"]`);
+
+        // ✅ قفل المربعات حسب حالة الإيقاف
+        if (isSuspended && !isPast) {
+            if (suspendStops.save) {
+                saveCb.checked = false;
+                saveCb.disabled = true;
+            }
+            if (suspendStops.review) {
+                reviewCb.checked = false;
+                reviewCb.disabled = true;
+            }
+        }
+
+        // ✅ باقي المربعات تبقى متاحة
+        absentCb.disabled = false;
+        excusedCb.disabled = false;
     });
 }
+
 
 function handleStatusChange(event) {
     const checkbox = event.target;
@@ -209,55 +298,77 @@ function handleStatusChange(event) {
     localStorage.setItem('dailyRecords', JSON.stringify(dailyRecords));
     updateStats();
 }
+
 function generateMessage() {
     const dateKey = currentDay.toISOString().slice(0, 10);
     const dayData = dailyRecords[dateKey] || {};
-    const today = currentDay;
-    const gregorianDate = today.toLocaleDateString('ar-u-nu-arab', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    const dayName = currentDay.toLocaleDateString('ar-u-nu-arab', { weekday: 'long' });
+    const dateStr = `${currentDay.getFullYear()}/${currentDay.getMonth() + 1}/${currentDay.getDate()}`;
 
-    let message = `السلام عليكم ورحمة الله وبركاته
+    let message = "----■▪︎•• `التقرير اليومي` ••▪︎■---\n" +
+"  :::::::| `حلقة " + siteSettings.className + "` |::::::::\n\n" +
+"`اليوم " + dayName + "` | " + dateStr + "\n" +
+"____________                  \n" +
+" `اسم الطالب`            | `الحفظ`|  `المراجعة`|\n" +
+"|____________  \n";
 
-تقرر نتائج حلقة زيد بن الدثنة لليوم
+    students.forEach((student, index) => {
+        const rec = dayData[student.id] || { حفظ: false, مراجعة: false, غائب: false, مستأذن: false };
 
-التاريخ: ${gregorianDate}
+        let hifdhStatus = '';
+        let murajaaStatus = '';
 
-`;
+        if (rec['غائب']) {
+            hifdhStatus = 'غائب';
+        } else if (rec['مستأذن']) {
+            hifdhStatus = 'مستأذن';
+        } else {
+            if (student.suspension && student.suspension.start_date) {
+                const start = new Date(student.suspension.start_date);
+                const end = student.suspension.end_date ? new Date(student.suspension.end_date) : null;
+                const current = new Date(dateKey);
 
-    if (students.length === 0) {
-        message += 'لا يوجد طلاب مسجلون في الحلقة.\n';
-    } else {
-        const separator = '---------------------------------';
-        
-        students.forEach((student, index) => {
-            const studentRecord = dayData[student.id] || { حفظ: false, مراجعة: false, غائب: false, مستأذن: false };
-            let statusDetails = '';
-            
-            if (studentRecord['غائب']) {
-                statusDetails = '       غائب';
-            } else if (studentRecord['مستأذن']) {
-                statusDetails = '       مستأذن';
+                if (current >= start && (!end || current <= end)) {
+                    if (student.suspension.stopSave) hifdhStatus = 'موقف';
+                    else hifdhStatus = rec['حفظ'] ? '✅' : '❌';
+
+                    if (student.suspension.stopReview) murajaaStatus = 'موقف';
+                    else murajaaStatus = rec['مراجعة'] ? '✅' : '❌';
+                } else {
+                    hifdhStatus = rec['حفظ'] ? '✅' : '❌';
+                    murajaaStatus = rec['مراجعة'] ? '✅' : '❌';
+                }
             } else {
-                const hifdhStatus = studentRecord['حفظ'] ? '✅' : '❌';
-                const murajaaStatus = studentRecord['مراجعة'] ? '✅' : '❌';
-                statusDetails = `حفظ: ${hifdhStatus} — مراجعة: ${murajaaStatus}`;
+                hifdhStatus = rec['حفظ'] ? '✅' : '❌';
+                murajaaStatus = rec['مراجعة'] ? '✅' : '❌';
             }
-            
-            message += `${separator}
-${toArabicNumerals(index + 1)}.\`${student.name}\`
-${statusDetails}
-`;
-        });
-        
-        message += `${separator}
+        }
 
-`;
-    }
+        const studentName = `*${student.name}*`;
 
-    message += `مركز بدر لتعليم القرآن الكريم – إدارة حلقة زيد بن الدثنة`;
-    
+        let line = `${toArabicNumerals(index + 1)}- ${studentName}`;
+        if (line.length < 25) line = line.padEnd(27, ' ');
+
+        if (murajaaStatus) {
+            message += `${line}| ${hifdhStatus.padEnd(6, ' ')}| ${murajaaStatus.padEnd(6, ' ')}|\n`;
+        } else {
+            message += `${line}| ${hifdhStatus.padEnd(6, ' ')}|\n`;
+        }
+
+        if (index === 0) {
+            message += '------------------------------------------------\n';
+        } else {
+            message += '|------------------------------------------------\n';
+        }
+    });
+
+    message += `\nمركز بدر لتعليم القرآن الكريم – إدارة حلقة ${siteSettings.className}`;
+
     messagePreviewEl.textContent = message;
     messageModal.style.display = 'block';
 }
+
+
 
 // دالة للحصول على تاريخ بداية الأسبوع (السبت)
 function getStartOfWeek(date) {
@@ -497,6 +608,8 @@ document.getElementById('add-student-btn').addEventListener('click', () => {
     }
 });
 
+
+
 studentListEl.addEventListener('click', (event) => {
     if (event.target.closest('.delete-btn')) {
         const button = event.target.closest('.delete-btn');
@@ -527,6 +640,10 @@ studentListEl.addEventListener('click', (event) => {
             updateStats();
             showNotification('تم تعديل اسم الطالب بنجاح');
         }
+    } else if (event.target.closest('.suspend-btn')) {
+        const button = event.target.closest('.suspend-btn');
+        const studentId = parseInt(button.dataset.id);
+        openStudentSuspendModal(studentId);
     }
 });
 
@@ -550,9 +667,19 @@ dateInput.addEventListener('change', (event) => {
     const newDate = new Date(event.target.value);
     if (!isNaN(newDate.getTime())) {
         currentDay = newDate;
+
+        // إذا التاريخ المختار هو نفس اليوم الحالي بالضبط
+        const todayStr = new Date().toISOString().slice(0,10);
+        if (event.target.value === todayStr) {
+            followToday = true;  // 👈 يتابع اليوم الحالي تلقائياً
+        } else {
+            followToday = false; // 👈 يثبت على التاريخ اللي اخترته
+        }
+
         renderDailyTable();
     }
 });
+
 
 attendanceBodyEl.addEventListener('change', handleStatusChange);
 generateMessageBtn.addEventListener('click', generateMessage);
@@ -568,14 +695,121 @@ copyMessageBtn.addEventListener('click', () => {
         });
 });
 
+// زر المشاركة
+const shareMessageBtn = document.getElementById('share-message-btn');
+
+shareMessageBtn.addEventListener('click', () => {
+    if (navigator.share) {
+        navigator.share({
+            text: messagePreviewEl.textContent
+        }).catch(err => {
+            console.error('خطأ في المشاركة:', err);
+            showNotification('فشل في المشاركة. جرب زر النسخ بدلاً من ذلك.', true);
+        });
+    } else {
+        alert('ميزة المشاركة غير مدعومة في هذا المتصفح. استخدم زر النسخ بدلاً من ذلك.');
+    }
+});
+
+
 // إضافة مستمع الحدث للفلترة الزمنية
 statsRangeSelect.addEventListener('change', updateStats);
 
-// Close modal when clicking outside
+// Close modals when clicking outside
 window.addEventListener('click', (event) => {
     if (event.target === messageModal) {
         messageModal.style.display = 'none';
     }
+    if (event.target === studentSuspendModal) {
+        studentSuspendModal.style.display = 'none';
+    }
+    if (event.target === siteSettingsModal) {
+        siteSettingsModal.style.display = 'none';
+    }
+});
+
+// Site settings modal events
+siteSettingsBtn.addEventListener('click', () => {
+    formClassName.value = siteSettings.className || '';
+    formTeacherName.value = siteSettings.teacherName || '';
+    siteSettingsModal.style.display = 'block';
+});
+closeSiteSettingsBtn.addEventListener('click', () => siteSettingsModal.style.display = 'none');
+saveSiteSettingsBtn.addEventListener('click', () => {
+    const newClass = formClassName.value.trim() || siteSettings.className;
+    const newTeacher = formTeacherName.value.trim() || siteSettings.teacherName;
+    siteSettings.className = newClass;
+    siteSettings.teacherName = newTeacher;
+    localStorage.setItem('siteSettings', JSON.stringify(siteSettings));
+    displayWelcome();
+    showNotification('تم حفظ إعدادات الحلقة والمعلم');
+    siteSettingsModal.style.display = 'none';
+});
+
+// Suspension modal functions
+function openStudentSuspendModal(studentId) {
+    currentEditingSuspendStudentId = studentId;
+    const student = students.find(s => s.id === studentId);
+    if (!student) return;
+    // Load existing suspension if any
+    const susp = student.suspension || {};
+    suspendSaveCheckbox.checked = !!susp.stopSave;
+    suspendReviewCheckbox.checked = !!susp.stopReview;
+    suspendStartInput.value = susp.start_date || '';
+    suspendEndInput.value = susp.end_date || '';
+    studentSuspendModal.style.display = 'block';
+}
+
+closeSuspendBtn.addEventListener('click', () => {
+    studentSuspendModal.style.display = 'none';
+});
+
+// Save suspension
+saveSuspendBtn.addEventListener('click', () => {
+    if (!currentEditingSuspendStudentId) return;
+    const student = students.find(s => s.id === currentEditingSuspendStudentId);
+    if (!student) return;
+    const startVal = suspendStartInput.value;
+    const endVal = suspendEndInput.value;
+    const stopSave = suspendSaveCheckbox.checked;
+    const stopReview = suspendReviewCheckbox.checked;
+
+    if (!startVal) {
+        alert('الرجاء تحديد تاريخ بداية الإيقاف.');
+        return;
+    }
+    // validate dates if end provided
+    if (endVal && new Date(endVal) < new Date(startVal)) {
+        alert('تاريخ النهاية لا يمكن أن يكون قبل تاريخ البداية.');
+        return;
+    }
+
+    student.suspension = {
+        start_date: startVal,
+        end_date: endVal || null,
+        stopSave: stopSave,
+        stopReview: stopReview
+    };
+
+    localStorage.setItem('students', JSON.stringify(students));
+    studentSuspendModal.style.display = 'none';
+    renderDailyTable();
+    updateStats();
+    showNotification('تم حفظ إعدادات الإيقاف للطالب');
+});
+
+// Remove suspension (إلغاء الإيقاف)
+removeSuspendBtn.addEventListener('click', () => {
+    if (!currentEditingSuspendStudentId) return;
+    if (!confirm('هل تريد إزالة الإيقاف لهذا الطالب نهائياً؟')) return;
+    const student = students.find(s => s.id === currentEditingSuspendStudentId);
+    if (!student) return;
+    delete student.suspension;
+    localStorage.setItem('students', JSON.stringify(students));
+    studentSuspendModal.style.display = 'none';
+    renderDailyTable();
+    updateStats();
+    showNotification('تم إزالة الإيقاف عن الطالب');
 });
 
 // Function to show notification
@@ -601,3 +835,99 @@ displayWelcome();
 renderStudents();
 renderDailyTable();
 updateStats();
+
+
+document.addEventListener("DOMContentLoaded", () => {
+    let siteSettings = JSON.parse(localStorage.getItem('siteSettings')) || null;
+
+    const firstTimeModal = document.getElementById('first-time-modal');
+    const saveFirstTimeBtn = document.getElementById('save-first-time-btn');
+
+    if (!siteSettings || !siteSettings.teacherName || !siteSettings.className) {
+        // أول دخول → أظهر نافذة الترحيب
+        firstTimeModal.style.display = 'block';
+    }
+
+    saveFirstTimeBtn.addEventListener('click', () => {
+        const teacherInput = document.getElementById('teacher-name-input').value.trim();
+        const classInput = document.getElementById('class-name-input').value.trim();
+
+        if (!teacherInput || !classInput) {
+            alert('الرجاء إدخال جميع البيانات');
+            return;
+        }
+
+        siteSettings = {
+            teacherName: teacherInput, // 👈 نخزن الاسم كما هو
+            className: classInput
+        };
+
+        // حفظ البيانات
+        localStorage.setItem('siteSettings', JSON.stringify(siteSettings));
+
+        // تحديث الترحيب العلوي
+        displayWelcome();
+
+        // إخفاء النافذة
+        firstTimeModal.style.display = 'none';
+    });
+});
+
+
+function resetSettingsAndStudents() {
+    if (confirm("هل تريد حذف بيانات الطلاب والمعلم وإعادة البدء من جديد؟")) {
+        localStorage.removeItem("students");
+        localStorage.removeItem("siteSettings");
+        location.reload();
+    }
+}
+
+/*********************
+  تحديث أوتوماتيكي لليوم الحالي
+*********************/
+setInterval(() => {
+    const now = new Date();
+    const nowYMD = now.toISOString().slice(0,10);
+    const currYMD = currentDay.toISOString().slice(0,10);
+
+    if (followToday && nowYMD !== currYMD) {
+        currentDay = new Date();
+        today = new Date();
+        renderDailyTable();
+    }
+}, 60 * 1000);
+
+
+window.addEventListener('load', () => {
+  const siteSettings = JSON.parse(localStorage.getItem('siteSettings'));
+  const firstTimeModal = document.getElementById('first-time-modal');
+  const saveFirstTimeBtn = document.getElementById('save-first-time-btn');
+
+  // إذا ما في بيانات محفوظة، افتح النافذة
+  if (!siteSettings) {
+    firstTimeModal.style.display = 'block';
+  }
+
+  // زر الحفظ
+  if (saveFirstTimeBtn) {
+    saveFirstTimeBtn.addEventListener('click', () => {
+      const teacher = document.getElementById('teacher-name-input').value.trim();
+      const className = document.getElementById('class-name-input').value.trim();
+
+      if (!teacher || !className) {
+        alert('الرجاء إدخال اسم المعلم واسم الحلقة');
+        return;
+      }
+
+      // حفظ
+      localStorage.setItem('siteSettings', JSON.stringify({
+        teacherName: teacher,
+        className: className
+      }));
+
+      // إغلاق النافذة وتحديث الصفحة
+      firstTimeModal.style.display = 'none';
+      location.reload();
+    });
+  }
+});
