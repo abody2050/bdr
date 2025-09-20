@@ -12,7 +12,10 @@
     <header class="header">
         <div class="header-content">
             <img src="assets/logo.png" alt="شعار المركز" class="logo">
-            <h1 class="center-name">مركز بدر لتعليم القرآن الكريم</h1>
+            <div class="header-top-row">
+                <h1 class="center-name" id="center-name">مركز بدر لتعليم القرآن الكريم</h1>
+                <button id="site-settings-btn" class="tiny-gear-btn" title="إعدادات الموقع">⚙️ إعدادات</button>
+            </div>
             <div id="welcome-banner" class="welcome-banner">
                 <p id="welcome-message"></p>
                 <p id="date-info"></p>
@@ -84,15 +87,89 @@
             <h3>نص الرسالة</h3>
             <pre id="message-preview"></pre>
             <button id="copy-message-btn"><i class="fas fa-copy"></i> نسخ الرسالة</button>
+            <button id="share-message-btn"><i class="fas fa-share"></i> مشاركة الرسالة</button>
+        </div>
+    </div>
+
+    <!-- Student Suspension Modal -->
+    <div id="student-suspend-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-suspend-btn">&times;</span>
+            <h3>إعدادات إيقاف الطالب</h3>
+            <form id="suspend-form">
+                <div class="form-row">
+                    <label><input type="checkbox" id="suspend-save"> إيقاف الحفظ</label>
+                </div>
+                <div class="form-row">
+                    <label><input type="checkbox" id="suspend-review"> إيقاف المراجعة</label>
+                </div>
+                <div class="form-row">
+                    <label>تاريخ بداية الإيقاف:</label>
+                    <input type="date" id="suspend-start">
+                </div>
+                <div class="form-row">
+                    <label>تاريخ نهاية الإيقاف (اختياري):</label>
+                    <input type="date" id="suspend-end">
+                </div>
+                <div class="modal-actions">
+                    <button type="button" id="save-suspend-btn">حفظ الإعداد</button>
+                    <button type="button" id="remove-suspend-btn" class="danger">إلغاء الإيقاف</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Site Settings Modal -->
+    <div id="site-settings-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-site-settings-btn">&times;</span>
+            <h3>إعدادات الحلقة والمعلم</h3>
+            <form id="site-settings-form">
+                <div class="form-row">
+                    <label>اسم الحلقة:</label>
+                    <input type="text" id="form-class-name" placeholder="مثال: حلقة زيد بن الدثنة">
+                </div>
+                <div class="form-row">
+                    <label>اسم المعلم:</label>
+                    <input type="text" id="form-teacher-name" placeholder="مثال: أ. خالد البيضي">
+                </div>
+                <div class="modal-actions">
+                    <button type="button" id="save-site-settings-btn">حفظ</button>
+                </div>
+            </form>
         </div>
     </div>
 
     <footer class="footer">
-        <p>مركز بدر لتعليم القرآن الكريم – إدارة حلقة زيد بن الدثنة</p>
+        <p id="footer-line">مركز بدر لتعليم القرآن الكريم – إدارة حلقة زيد بن الدثنة</p>
         <p class="developer-credit">تطوير: عبدالله مبارك</p>
     </footer>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="script.js"></script> 
+    <!-- نافذة الترحيب الأولي -->
+<div id="first-time-modal" class="modal">
+  <div class="modal-content welcome-modal">
+    <h2 class="welcome-title">👋 مرحبًا بك</h2>
+    <p class="welcome-text">الرجاء إدخال بياناتك لإعداد الموقع لأول مرة:</p>
+
+    <div class="form-group">
+      <label for="teacher-name-input">اسم المعلم:</label>
+      <input type="text" id="teacher-name-input" placeholder="مثال: خالد البيضي">
+    </div>
+
+    <div class="form-group">
+      <label for="class-name-input">اسم الحلقة:</label>
+      <input type="text" id="class-name-input" placeholder="مثال: زيد بن الدثنة">
+    </div>
+
+    <button id="save-first-time-btn" class="save-btn">💾 حفظ</button>
+  </div>
+</div>
+    <footer class="footer">
+    <button class="reset-btn" onclick="resetSettingsAndStudents()">🔄 إعادة البدء</button>
+</footer>
+    
+    
 </body>
 </html>
